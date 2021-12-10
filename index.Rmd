@@ -46,17 +46,22 @@ class_diag <- function(score, truth, positive, cutoff=.5){
 
 # Mining, Classification, Prediction
 
-## Name and EID here
+## Mindy Tran, mt37643
 
 ### Introduction 
 
-Paragraph or two introducing your datasets and variables, why they are interesting to you, etc. See instructions for more information
+  Death by drug overdose is a problem that continues to take the lives of many individuals each day. Nearly 70% of all overdoses involves opioids (CDC). The dispensing of opioids is a topic that I am heavily interested in as it has become a prevalent issue in the healthcare industry. Roughly 24% of individuals prescribed opioids for chronic pain misuse them (CDC). In this project, two datasets obtained from the CDC will be used for analysis. The first dataset, called 'overdose', features data from 2019 outlining drug overdose death rates in the US. The second dataset, called 'opioid', includes data from 2019 on opioid dispensing rates, through prescription, in the US. 
+  In the 'overdose' dataset, there are 4 variables. The variable 'Location' features the 50 states and D.C. The variable 'Age.adjusted.Rate' is the age adjusted rate of deaths by drug overdose per 100,000 population. The variable 'Range.Category' features the minimum to maximum age adjusted rate that was calculated. The variable 'Number.of.Deaths' is the number of drug overdose deaths per 100,000 population. In the 'opioid' dataset, there are three variables. The variable 'States' features the 50 states, D.C. and the U.S. The variable 'Abbreviation' is the abbreviation of each state. The variable 'Opioid.Dispensing.Rate.per.100' is the opioid dispensing rate per 100 people. A binary variable was also created to determine if the opioid dispensing rate, for each location, was greater than 50. All of the variables have 51 observations.
 
 ```{R}
 library(tidyverse)
 # read your datasets in here, e.g., with read_csv()
+overdose <- read.csv('overdose.csv')
+opioid <- read.csv('opioid dispensing .csv')
 
 # if your dataset needs tidying, do so here
+inner_join(overdose,opioid,by=c("Location"="State")) -> opioid_overdose
+opioid_overdose %>% mutate(Opioid.Dispensing.Rate.over.50 = Opioid.Dispensing.Rate.per.100>50) -> opioid_overdose
 
 # any other code here
 ```
@@ -66,27 +71,80 @@ library(tidyverse)
 ```{R}
 library(cluster)
 # clustering code here
+clust_dat <- opioid_overdose %>% select(Number.of.Deaths,Opioid.Dispensing.Rate.per.100,Age.adjusted.Rate)
+
+sil_width<-vector()
+for(i in 2:10){  
+  pam_fit <- pam(clust_dat, k = i)  
+  sil_width[i] <- pam_fit$silinfo$avg.width  
+}
+ggplot()+geom_line(aes(x=1:10,y=sil_width))+scale_x_continuous(name="k",breaks=1:10)
+
+pam1 <- clust_dat %>% pam(k=2)
+pam1
+
+library(GGally)
+clust_dat %>% mutate(cluster=as.factor(pam1$clustering)) %>% ggpairs(aes(color=cluster))
 ```
 
-Discussion of clustering here
+The number of drug overdose deaths per 100,000 population shows the greatest difference between the two clusters. The opioid dispensing rate per 100 people shows the least difference between the two clusters. In cluster 1 (red), the number of drug overdose deaths per 100,000 population is low, along with the opioid dispensing rate and age adjusted rate. In cluster 2 (blue), the number of drug overdose deaths per 100,000 population and the age adjusted rate are high, but the opioid dispensing rate is low. The cluster solution is reasonable as the overall average silhouette width is between than 0.51 - 0.70. 
     
     
 ### Dimensionality Reduction with PCA
 
 ```{R}
 # PCA code here
+opioidoverdose_nums <- opioid_overdose %>% select_if(is.numeric)
+princomp(opioidoverdose_nums, cor=T) -> pca1
+
+summary(pca1, loadings=T)
+
+pca1df <-data.frame(PC1=pca1$scores[,1],PC2=pca1$scores[,2])
+
+ggplot(pca1df,aes(PC1,PC2)) + geom_point()
 ```
 
-Discussions of PCA here. 
+Component 1 features  
 
 ###  Linear Classifier
 
 ```{R}
 # linear classifier code here
+logistic_fit <- glm(Opioid.Dispensing.Rate.over.50 == "TRUE" ~ Age.adjusted.Rate + Number.of.Deaths, data=opioid_overdose, family="binomial")
+
+
+prob_reg <- predict(logistic_fit,type='response')
+class_diag(prob_reg, opioid_overdose$Opioid.Dispensing.Rate.over.50, positive= "TRUE")
+
+# confusion matrix
+table(truth= opioid_overdose$Opioid.Dispensing.Rate.over.50,
+      prediction= prob_reg>.5) %>% addmargins
 ```
 
 ```{R}
 # cross-validation of linear classifier here
+set.seed(322)
+k=10
+
+data<-sample_frac(opioid_overdose)
+folds <- rep(1:k, length.out=nrow(data))
+
+diags<-NULL
+
+i=1
+for(i in 1:k){
+
+train<-data[folds!=i,] 
+test<-data[folds==i,] 
+truth<-test$Opioid.Dispensing.Rate.over.50
+
+fit <- glm(Opioid.Dispensing.Rate.over.50 ~ Age.adjusted.Rate + Number.of.Deaths, data=opioid_overdose, family="binomial") 
+
+probs <- predict(fit, newdata=test, type="response")
+
+diags<-rbind(diags,class_diag(probs,truth,positive="TRUE")) }
+
+summarize_all(diags,mean)
 ```
 
 Discussion here
@@ -96,10 +154,41 @@ Discussion here
 ```{R}
 library(caret)
 # non-parametric classifier code here
+knn_fit <- knn3(Opioid.Dispensing.Rate.over.50 == "TRUE" ~ Age.adjusted.Rate + Number.of.Deaths, data=opioid_overdose)
+
+prob_knn <- predict(knn_fit, opioid_overdose)[,2]
+
+class_diag(prob_knn, opioid_overdose$Opioid.Dispensing.Rate.over.50, positive= "TRUE")
+
+### confusion matrix
+table(truth= opioid_overdose$Opioid.Dispensing.Rate.over.50,
+      prediction= prob_knn>.5)
 ```
 
 ```{R}
 # cross-validation of np classifier here
+set.seed(322)
+k=10
+
+data<-sample_frac(opioid_overdose)
+folds <- rep(1:k, length.out=nrow(data))
+
+diags<-NULL
+
+i=1
+for(i in 1:k){
+
+train<-data[folds!=i,] 
+test<-data[folds==i,] 
+truth<-test$Opioid.Dispensing.Rate.over.50
+
+fit <- knn3(Opioid.Dispensing.Rate.over.50 == "TRUE" ~ Age.adjusted.Rate + Number.of.Deaths, data=opioid_overdose)
+
+probs <- predict(fit,newdata = test)[,2]
+
+diags<-rbind(diags,class_diag(probs,truth,positive="TRUE")) }
+
+summarize_all(diags,mean)
 ```
 
 Discussion
@@ -109,10 +198,32 @@ Discussion
 
 ```{R}
 # regression model code here
+fit<-lm(Number.of.Deaths ~ Age.adjusted.Rate + Opioid.Dispensing.Rate.per.100 + Opioid.Dispensing.Rate.over.50, data=opioid_overdose)
+
+yhat<-predict(fit) 
+
+mean((opioid_overdose$Number.of.Deaths-yhat)^2)
 ```
 
 ```{R}
 # cross-validation of regression model here
+set.seed(322)
+k=10
+
+data<-opioid_overdose[sample(nrow(opioid_overdose)),]
+folds<-cut(seq(1:nrow(opioid_overdose)),breaks=k,labels=F)
+diags<-NULL
+
+for(i in 1:k){
+  train<-data[folds!=i,]
+  test<-data[folds==i,]
+  
+  fit<-lm(Number.of.Deaths~Age.adjusted.Rate+Opioid.Dispensing.Rate.per.100+Opioid.Dispensing.Rate.over.50,data=opioid_overdose)
+  yhat<-predict(fit,newdata=test)
+  diags<-mean((test$Number.of.Deaths-yhat)^2) 
+}
+
+mean(diags)
 ```
 
 Discussion
@@ -121,10 +232,42 @@ Discussion
 
 ```{R}
 library(reticulate)
+
+use_python("/usr/bin/python3")
+
+#py_install("matplotlib")
+#plot <- import("matplotlib")
+#plot$use("Agg", force = TRUE)
+
+avg_death <- "Average Number of Deaths:"
+
+cat(c(avg_death,py$mean_death))
 ```
 
 ```{python}
 # python code here
+import pandas as pd
+import matplotlib.pyplot as plt
+
+overdose=pd.read_csv("overdose.csv",index_col=0)
+opioid_dispensing=pd.read_csv("opioid dispensing .csv",index_col=0)
+
+mean_death = overdose["Number of Deaths"].mean()
+
+print(r.avg_death, mean_death)
+
+
+#y=overdose["Number of Deaths"]
+#x=opioid_dispensing["Opioid Dispensing Rate per 100"]
+#print(x)
+#plt.scatter(x,y)
+#plt.show()
+
+#plt.scatter(x,y, color="blue", alpha=.5)
+#plt.xlabel('Opioid Dispensing Rate')
+#plt.ylabel('Number of Deaths')
+#plt.title('Opioid Dispensing Rate by Number of Deaths')
+#plt.show()
 ```
 
 Discussion
