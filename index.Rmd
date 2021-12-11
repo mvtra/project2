@@ -51,26 +51,24 @@ class_diag <- function(score, truth, positive, cutoff=.5){
 ### Introduction 
 
   Death by drug overdose is a problem that continues to take the lives of many individuals each day. Nearly 70% of all overdoses involves opioids (CDC). The dispensing of opioids is a topic that I am heavily interested in as it has become a prevalent issue in the healthcare industry. Roughly 24% of individuals prescribed opioids for chronic pain misuse them (CDC). In this project, two datasets obtained from the CDC will be used for analysis. The first dataset, called 'overdose', features data from 2019 outlining drug overdose death rates in the US. The second dataset, called 'opioid', includes data from 2019 on opioid dispensing rates, through prescription, in the US. 
+  
   In the 'overdose' dataset, there are 4 variables. The variable 'Location' features the 50 states and D.C. The variable 'Age.adjusted.Rate' is the age adjusted rate of deaths by drug overdose per 100,000 population. The variable 'Range.Category' features the minimum to maximum age adjusted rate that was calculated. The variable 'Number.of.Deaths' is the number of drug overdose deaths per 100,000 population. In the 'opioid' dataset, there are three variables. The variable 'States' features the 50 states, D.C. and the U.S. The variable 'Abbreviation' is the abbreviation of each state. The variable 'Opioid.Dispensing.Rate.per.100' is the opioid dispensing rate per 100 people. A binary variable was also created to determine if the opioid dispensing rate, for each location, was greater than 50. All of the variables have 51 observations.
 
 ```{R}
 library(tidyverse)
-# read your datasets in here, e.g., with read_csv()
+
 overdose <- read.csv('overdose.csv')
 opioid <- read.csv('opioid dispensing .csv')
 
-# if your dataset needs tidying, do so here
 inner_join(overdose,opioid,by=c("Location"="State")) -> opioid_overdose
 opioid_overdose %>% mutate(Opioid.Dispensing.Rate.over.50 = Opioid.Dispensing.Rate.per.100>50) -> opioid_overdose
-
-# any other code here
 ```
 
 ### Cluster Analysis
 
 ```{R}
 library(cluster)
-# clustering code here
+
 clust_dat <- opioid_overdose %>% select(Number.of.Deaths,Opioid.Dispensing.Rate.per.100,Age.adjusted.Rate)
 
 sil_width<-vector()
@@ -87,24 +85,30 @@ library(GGally)
 clust_dat %>% mutate(cluster=as.factor(pam1$clustering)) %>% ggpairs(aes(color=cluster))
 ```
 
-The number of drug overdose deaths per 100,000 population shows the greatest difference between the two clusters. The opioid dispensing rate per 100 people shows the least difference between the two clusters. In cluster 1 (red), the number of drug overdose deaths per 100,000 population is low, along with the opioid dispensing rate and age adjusted rate. In cluster 2 (blue), the number of drug overdose deaths per 100,000 population and the age adjusted rate are high, but the opioid dispensing rate is low. The cluster solution is reasonable as the overall average silhouette width is between than 0.51 - 0.70. 
+PAM clustering was performed with the numeric variables: number of deaths, opioid dispensing rate, and the age-adjusted rate. Two clusters were picked based on the largest average silhouette width, which was around 0.65. The number of drug overdose deaths per 100,000 population shows the greatest difference between the two clusters. The opioid dispensing rate per 100 people shows the least difference between the two clusters. In cluster 1 (red), the number of drug overdose deaths per 100,000 population is low, along with the opioid dispensing rate and age adjusted rate. In cluster 2 (blue), the number of drug overdose deaths per 100,000 population and the age adjusted rate are high, but the opioid dispensing rate is low. The cluster solution is reasonable as the overall average silhouette width is between than 0.51 - 0.70. 
     
     
 ### Dimensionality Reduction with PCA
 
 ```{R}
-# PCA code here
+library(factoextra)
+
 opioidoverdose_nums <- opioid_overdose %>% select_if(is.numeric)
 princomp(opioidoverdose_nums, cor=T) -> pca1
+
+eigval <-  pca1$sdev^2
+varprop=round(eigval/sum(eigval), 2)
 
 summary(pca1, loadings=T)
 
 pca1df <-data.frame(PC1=pca1$scores[,1],PC2=pca1$scores[,2])
 
 ggplot(pca1df,aes(PC1,PC2)) + geom_point()
+
+fviz_pca_biplot(pca1)
 ```
 
-Component 1 features  
+Component 1 features the age-adjusted rate and number of deaths aganist the opioid dispensing rate. Component 2 feature the age-adjusted rate and the opioid dispensing rate. Component 3 feature the age-adjusted rate against the number of deaths and the opioid dispensing rate. In component 1, a high score means the location had a high number of drug overdose deaths and a high age adjusted rate of deaths by drug overdose but had a low opioid dispensing rate. In component 2, a high score means the location had a high age adjusted rate of deaths by drug overdose and a high opioid dispensing rate. In component 3, a high score means the location had a high age adjusted rate of deaths by drug overdose but had a low opioid dispensing rate and a low number of deaths. Component 1 and 2 accounted from seventy-five percent of the total variability. 
 
 ###  Linear Classifier
 
@@ -147,7 +151,7 @@ diags<-rbind(diags,class_diag(probs,truth,positive="TRUE")) }
 summarize_all(diags,mean)
 ```
 
-Discussion here
+With an AUC of 0.531, the linear regression model is performing pretty poorly. The cross validation is also performing pretty poorly as it has an AUC of 0.558; the model is predicting new observations per CV AUC badly. Though, there are no real signs of overfitting as the AUC of the cross validation is around 0.02 higher than the AUC of the linear regression.
 
 ### Non-Parametric Classifier
 
@@ -191,7 +195,7 @@ diags<-rbind(diags,class_diag(probs,truth,positive="TRUE")) }
 summarize_all(diags,mean)
 ```
 
-Discussion
+The k-nearest-neighbors model is performing slightly better, though not great, as it has an AUC of 0.704. With an AUC of 0.673, the cross validation is also performing slightly better, though it is still not great. There is very little signs of overfitting, not anything meaningful, as the AUC of the k-nearest-neighbors is around 0.03 higher than the AUC of the cross validation. The k-nearest-neighbors model performs fairly better than the linear regression model in its cross-validation performance as the k-nearest-neighbors model has a higher AUC value.
 
 
 ### Regression/Numeric Prediction
@@ -218,64 +222,43 @@ for(i in 1:k){
   train<-data[folds!=i,]
   test<-data[folds==i,]
   
-  fit<-lm(Number.of.Deaths~Age.adjusted.Rate+Opioid.Dispensing.Rate.per.100+Opioid.Dispensing.Rate.over.50,data=opioid_overdose)
+  fit<-lm(Number.of.Deaths~Age.adjusted.Rate+Opioid.Dispensing.Rate.per.100+Opioid.Dispensing.Rate.over.50,data=train)
   yhat<-predict(fit,newdata=test)
-  diags<-mean((test$Number.of.Deaths-yhat)^2) 
+  diags[i]<-mean((test$Number.of.Deaths-yhat)^2) 
 }
 
 mean(diags)
 ```
 
-Discussion
+The average mean-squared error in the regression model is 1820798, while the average mean-squared error in the cross validation is 2043487. Since the mean-squared error is higher in cross validation than in the regression model, there are signs of overfitting. 
 
 ### Python 
 
 ```{R}
 library(reticulate)
-
 use_python("/usr/bin/python3")
 
-#py_install("matplotlib")
-#plot <- import("matplotlib")
-#plot$use("Agg", force = TRUE)
 
 avg_death <- "Average Number of Deaths:"
-
-cat(c(avg_death,py$mean_death))
 ```
 
 ```{python}
 # python code here
 import pandas as pd
-import matplotlib.pyplot as plt
 
 overdose=pd.read_csv("overdose.csv",index_col=0)
 opioid_dispensing=pd.read_csv("opioid dispensing .csv",index_col=0)
 
 mean_death = overdose["Number of Deaths"].mean()
 
+mean_opioid = opioid_dispensing["Opioid Dispensing Rate per 100"].mean()
+
 print(r.avg_death, mean_death)
-
-
-#y=overdose["Number of Deaths"]
-#x=opioid_dispensing["Opioid Dispensing Rate per 100"]
-#print(x)
-#plt.scatter(x,y)
-#plt.show()
-
-#plt.scatter(x,y, color="blue", alpha=.5)
-#plt.xlabel('Opioid Dispensing Rate')
-#plt.ylabel('Number of Deaths')
-#plt.title('Opioid Dispensing Rate by Number of Deaths')
-#plt.show()
 ```
 
-Discussion
+```{R}
+avg_opioid <- "Average Opioid Dispensing Rate:"
+cat(c(avg_opioid,py$mean_opioid))
+```
 
-### Concluding Remarks
-
-Include concluding remarks here, if any
-
-
-
-
+R was used to create labels for the average values of opioid dispensing rate and number of deaths, and python was used to define the average values of opioid dispensing rate and number of death. Using "r." and "py$", the objects were shared between R and python.
